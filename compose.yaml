@@ -1,0 +1,54 @@
+# compose.yaml — PulseLedger (Modern Compose Spec: no obsolete 'version' key)
+name: pulseledger
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: pulseledger
+      MYSQL_USER: ledger_app
+      MYSQL_PASSWORD: ${DB_PASSWORD:-ledger_secret_pw123}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_secret_pw123}
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  ledger-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/pulseledger?useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ledger_app
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-ledger_secret_pw123}
+      SPRING_DATA_REDIS_HOST: redis
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql_data:
